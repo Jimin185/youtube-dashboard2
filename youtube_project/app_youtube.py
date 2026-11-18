@@ -57,7 +57,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 logo_path = os.path.join(current_dir, "creatip_CI_B.png")
 
 if os.path.exists(logo_path):
-    st.sidebar.image(logo_path, use_container_width=True)
+    st.sidebar.image(logo_path, width="stretch")
 else:
     st.sidebar.markdown("<div style='font-size: 26px; font-weight: bold; color: #000000;'>CREATIP</div>", unsafe_allow_html=True)
 
@@ -104,14 +104,14 @@ else:
         top_subs = filtered_df.sort_values('subscriber_count', ascending=False).head(10)
         if not top_subs.empty:
             fig_subs = px.bar(top_subs, x='subscriber_count', y='channel_title', orientation='h', color_continuous_scale='Blues')
-            st.plotly_chart(fig_subs, use_container_width=True)
+            st.plotly_chart(fig_subs, width="stretch")
 
     with chart_col2:
         st.subheader("🔥 영상당 평균 조회수 TOP 10")
         top_views = filtered_df.sort_values('avg_views', ascending=False).head(10)
         if not top_views.empty:
             fig_views = px.bar(top_views, x='avg_views', y='channel_title', orientation='h', color_continuous_scale='Oranges')
-            st.plotly_chart(fig_views, use_container_width=True)
+            st.plotly_chart(fig_views, width="stretch")
 
     st.markdown("---")
 
@@ -128,4 +128,4 @@ else:
         display_df.columns = ['채널명', '국가', '카테고리', '구독자 수', '60일 평균 조회수', '평균 댓글수', '인게이지먼트(%)', '예측 단가 (범위)']
         display_df = display_df[['채널명', '국가', '카테고리', '구독자 수', '60일 평균 조회수', '예측 단가 (범위)', '평균 댓글수', '인게이지먼트(%)']]
         
-        st.dataframe(display_df, use_container_width=True)
+        st.dataframe(display_df, width="stretch")

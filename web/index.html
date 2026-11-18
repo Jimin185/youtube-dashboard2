@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>글로벌 인플루언서 실적 대시보드</title>
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
+<style>
+  :root { --bg:#f7f8fa; --card:#fff; --text:#1d2129; --muted:#6b7280; --line:#e5e7eb; --accent:#2563eb; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif; background:var(--bg); color:var(--text); }
+  .layout { display:flex; min-height:100vh; }
+  aside { width:260px; background:#f0f2f6; padding:24px 20px; flex-shrink:0; }
+  aside img { width:100%; margin-bottom:16px; }
+  aside h3 { font-size:16px; margin:16px 0 12px; }
+  aside label { display:block; font-size:14px; margin:14px 0 6px; }
+  aside select { width:100%; padding:8px; border:1px solid var(--line); border-radius:8px; background:#fff; font-size:14px; }
+  main { flex:1; padding:32px 40px; min-width:0; }
+  h1 { font-size:28px; margin:0 0 24px; }
+  h2 { font-size:20px; margin:0 0 12px; }
+  hr { border:none; border-top:1px solid var(--line); margin:28px 0; }
+  .metrics { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+  .metric .label { font-size:14px; color:var(--muted); }
+  .metric .value { font-size:32px; font-weight:600; margin-top:4px; }
+  .charts { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+  .chart { height:420px; }
+  .table-wrap { overflow-x:auto; border:1px solid var(--line); border-radius:8px; background:var(--card); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { padding:8px 12px; border-bottom:1px solid var(--line); white-space:nowrap; text-align:left; }
+  th { background:#fafafa; cursor:pointer; user-select:none; position:sticky; top:0; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .notice { padding:14px 16px; border-radius:8px; background:#fff7e6; color:#8a5a00; }
+  .notice.err { background:#fdecec; color:#9b1c1c; }
+  @media (max-width: 900px) {
+    .layout { flex-direction:column; } aside { width:auto; } main { padding:20px 16px; }
+    .metrics, .charts { grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside>
+    <img src="creatip_CI_B.png" alt="CREATIP" onerror="this.outerHTML='<div style=&quot;font-size:26px;font-weight:bold&quot;>CREATIP</div>'">
+    <hr style="margin:12px 0">
+    <h3>🔍 데이터 필터 선택</h3>
+    <label for="country">🗺️ 국가 선택</label>
+    <select id="country"><option>전체</option></select>
+    <label for="category">🏷️ 카테고리 선택</label>
+    <select id="category"><option>전체</option></select>
+  </aside>
+  <main>
+    <h1>🌍 글로벌 인플루언서 실적 모니터링 대시보드</h1>
+    <div id="status" class="notice">데이터를 불러오는 중...</div>
+    <div id="content" hidden>
+      <div class="metrics">
+        <div class="metric"><div class="label">📊 분석 대상 유튜버 수</div><div class="value" id="m-count"></div></div>
+        <div class="metric"><div class="label">👥 평균 구독자 수</div><div class="value" id="m-subs"></div></div>
+        <div class="metric"><div class="label">🔥 평균 인게이지먼트 비율</div><div class="value" id="m-eng"></div></div>
+      </div>
+      <hr>
+      <div class="charts">
+        <div><h2>🏆 구독자 순위 TOP 10</h2><div id="chart-subs" class="chart"></div></div>
+        <div><h2>🔥 영상당 평균 조회수 TOP 10</h2><div id="chart-views" class="chart"></div></div>
+      </div>
+      <hr>
+      <h2>📋 인플루언서 상세 실적 및 예측 단가 현황</h2>
+      <div class="table-wrap"><table id="table"><thead></thead><tbody></tbody></table></div>
+    </div>
+  </main>
+</div>
+<script>
+// Supabase publishable key: 브라우저 공개용 키 (접근 권한은 Supabase RLS 정책으로 제어)
+const SUPABASE_URL = 'https://prndaklscarhlhkkylce.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_trNU_a81MDiyAQ3WfPR0aA_b8H45RfQ';
+const PAGE = 1000;
+
+async function fetchAll(table, select) {
+  const rows = [];
+  for (let from = 0; ; from += PAGE) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=${encodeURIComponent(select)}`, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, Range: `${from}-${from + PAGE - 1}` }
+    });
+    if (!res.ok) throw new Error(`${table}: ${res.status} ${await res.text()}`);
+    const batch = await res.json();
+    rows.push(...batch);
+    if (batch.length < PAGE) return rows;
+  }
+}
+
+const fmt = n => Math.round(Number(n) || 0).toLocaleString('ko-KR');
+let allRows = [];
+let sortState = { key: null, asc: false };
+
+async function load() {
+  const status = document.getElementById('status');
+  try {
+    const [stats, pool] = await Promise.all([
+      fetchAll('channel_stats', 'id,channel_id,subscriber_count,view_count,avg_views,avg_comments,engagement_rate,country,category,collected_at'),
+      fetchAll('youtuber_pool', 'channel_id,channel_title'),
+    ]);
+    if (!stats.length) { status.textContent = '⚠️ 표시할 데이터가 없습니다.'; return; }
+    const titles = new Map(pool.map(p => [p.channel_id, p.channel_title]));
+    allRows = stats.map(r => ({ ...r, channel_title: titles.get(r.channel_id) || r.channel_id }));
+    fillSelect('country', allRows.map(r => r.country));
+    fillSelect('category', allRows.map(r => r.category));
+    status.hidden = true;
+    document.getElementById('content').hidden = false;
+    render();
+  } catch (e) {
+    status.className = 'notice err';
+    status.textContent = `데이터 처리 중 오류가 발생했습니다: ${e.message}`;
+  }
+}
+
+function fillSelect(id, values) {
+  const sel = document.getElementById(id);
+  [...new Set(values.filter(v => v != null && v !== ''))].sort().forEach(v => sel.add(new Option(v, v)));
+  sel.addEventListener('change', render);
+}
+
+function filtered() {
+  const c = document.getElementById('country').value;
+  const k = document.getElementById('category').value;
+  let rows = allRows.filter(r => (c === '전체' || r.country === c) && (k === '전체' || r.category === k));
+  // 채널별 최신 스냅샷만 남김
+  rows = [...rows].sort((a, b) => String(b.collected_at || '').localeCompare(String(a.collected_at || '')));
+  const seen = new Set();
+  return rows.filter(r => !seen.has(r.channel_id) && seen.add(r.channel_id));
+}
+
+const avg = (rows, key) => rows.length ? rows.reduce((s, r) => s + (Number(r[key]) || 0), 0) / rows.length : 0;
+
+function barChart(el, rows, key, color) {
+  const top = [...rows].sort((a, b) => (b[key] || 0) - (a[key] || 0)).slice(0, 10).reverse();
+  Plotly.react(el, [{
+    type: 'bar', orientation: 'h', x: top.map(r => r[key]), y: top.map(r => r.channel_title),
+    marker: { color }, hovertemplate: '%{y}<br>%{x:,}<extra></extra>'
+  }], { margin: { l: 10, r: 10, t: 10, b: 40 }, yaxis: { automargin: true }, xaxis: { title: key } },
+     { responsive: true, displayModeBar: false });
+}
+
+const COLUMNS = [
+  { key: 'channel_title', label: '채널명' },
+  { key: 'country', label: '국가' },
+  { key: 'category', label: '카테고리' },
+  { key: 'subscriber_count', label: '구독자 수', num: true },
+  { key: 'avg_views', label: '60일 평균 조회수', num: true },
+  { key: 'price', label: '예측 단가 (범위)', sortKey: 'avg_views' },
+  { key: 'avg_comments', label: '평균 댓글수', num: true },
+  { key: 'engagement_rate', label: '인게이지먼트(%)', num: true, raw: true },
+];
+
+function renderTable(rows) {
+  const thead = document.querySelector('#table thead');
+  const tbody = document.querySelector('#table tbody');
+  thead.innerHTML = '<tr>' + COLUMNS.map(c => `<th data-key="${c.sortKey || c.key}">${c.label}${sortState.key === (c.sortKey || c.key) ? (sortState.asc ? ' ▲' : ' ▼') : ''}</th>`).join('') + '</tr>';
+  thead.querySelectorAll('th').forEach(th => th.onclick = () => {
+    const key = th.dataset.key;
+    sortState = { key, asc: sortState.key === key ? !sortState.asc : false };
+    render();
+  });
+  if (sortState.key) {
+    const k = sortState.key, dir = sortState.asc ? 1 : -1;
+    rows = [...rows].sort((a, b) => {
+      const x = a[k], y = b[k];
+      return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x ?? '').localeCompare(String(y ?? ''))) * dir;
+    });
+  }
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+  tbody.innerHTML = rows.map(r => '<tr>' + COLUMNS.map(c => {
+    if (c.key === 'price') { const v = Number(r.avg_views) || 0; return `<td class="num">₩${fmt(v * 50)} ~ ₩${fmt(v * 100)}</td>`; }
+    if (c.num) return `<td class="num">${c.raw ? (r[c.key] ?? '') : fmt(r[c.key])}</td>`;
+    return `<td>${esc(r[c.key])}</td>`;
+  }).join('') + '</tr>').join('');
+}
+
+function render() {
+  const rows = filtered();
+  document.getElementById('m-count').textContent = `${rows.length} 명`;
+  document.getElementById('m-subs').textContent = `${fmt(Math.trunc(avg(rows, 'subscriber_count')))} 명`;
+  document.getElementById('m-eng').textContent = `${avg(rows, 'engagement_rate').toFixed(3)} %`;
+  renderTable(rows);
+  try {
+    barChart('chart-subs', rows, 'subscriber_count', '#3b82f6');
+    barChart('chart-views', rows, 'avg_views', '#f97316');
+  } catch (e) { console.error('차트 렌더링 실패:', e); }
+}
+
+load();
+</script>
+</body>
+</html>
