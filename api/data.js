@@ -11,7 +11,12 @@ async function fetchAll(table, select) {
       headers: { apikey: SUPABASE_KEY, Range: `${from}-${from + PAGE - 1}` },
     });
     const text = await res.text();
-    if (!res.ok) throw new Error(`${table} 조회 실패 (HTTP ${res.status}): ${text.slice(0, 300)}`);
+    if (!res.ok) {
+      if ([520, 521, 522, 523, 540, 544].includes(res.status)) {
+        throw new Error(`Supabase 서버가 응답하지 않습니다 (HTTP ${res.status}). 프로젝트가 일시정지 상태이거나 복구 중입니다. 잠시 후 새로고침하세요.`);
+      }
+      throw new Error(`${table} 조회 실패 (HTTP ${res.status}): ${text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').slice(0, 200)}`);
+    }
     const batch = JSON.parse(text);
     rows.push(...batch);
     if (batch.length < PAGE) return rows;
